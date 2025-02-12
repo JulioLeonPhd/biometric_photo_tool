@@ -43,13 +43,15 @@ class BiometricApp(tk.Tk):
 
         tk.Label(control_frame, text="Face Coverage").pack(anchor="w")
         tk.Scale(control_frame,
-                 variable=self.face_coverage, from_=0.5, to=0.9, resolution=0.01,
+                 variable=self.face_coverage, from_=0.4, to=0.9, resolution=0.01,
                  orient=tk.HORIZONTAL, length=150).pack(anchor="w")
 
         tk.Label(control_frame, text="Brightness (RAW only)").pack(anchor="w")
         tk.Scale(control_frame,
-                 variable=self.brightness, from_=0.5, to=5.0, resolution=0.1,
+                 variable=self.brightness, from_=0.5, to=8.0, resolution=0.1,
                  orient=tk.HORIZONTAL, length=150).pack(anchor="w")
+
+        tk.Button(control_frame, text="Update Preview", command=self.update_preview).pack(pady=5)
 
         rotate_frame = tk.Frame(control_frame, bd=2, relief=tk.GROOVE)
         rotate_frame.pack(pady=5, fill=tk.X)
@@ -73,10 +75,15 @@ class BiometricApp(tk.Tk):
         tk.Checkbutton(control_frame, text="Show Grid on Preview",
                        variable=self.show_grid, command=self.update_preview).pack(anchor="w", pady=5)
 
-        tk.Button(control_frame, text="Update Preview", command=self.update_preview).pack(pady=5)
-        tk.Button(control_frame, text="Export 3x2 Layout", command=self.export_layout).pack(pady=5)
+        # "Export Single Photo 600 DPI" button
+        tk.Button(control_frame, text="Export Single Photo (600 DPI)",
+                  command=self.export_single_600dpi).pack(pady=5)
 
-        # =========== PREVIEW FRAME =============
+        # "Export 3x2 Layout" button
+        tk.Button(control_frame, text="Export 3x2 Layout",
+                  command=self.export_layout).pack(pady=5)
+
+        # The preview label
         self.preview_label = tk.Label(preview_frame, bg="white", text="[No Preview]")
         self.preview_label.pack(expand=True, fill=tk.BOTH)
 
@@ -169,6 +176,54 @@ class BiometricApp(tk.Tk):
         tk_img = ImageTk.PhotoImage(preview_img)
         self.preview_label.config(image=tk_img, text="")
         self.preview_label.image = tk_img
+        
+    def export_single_600dpi(self):
+        """
+        Export the final single biometric photo at 3.5x4.5 cm but 600 DPI,
+        suitable for further editing in GIMP.
+        """
+        if self.bbox is None:
+            messagebox.showerror("Error", "No bounding box to export.")
+            return
+
+        out_path = filedialog.asksaveasfilename(
+            title="Save Single Photo (600 DPI)",
+            defaultextension=".jpg",
+            initialfile="biometric_single_600dpi.jpg",
+            filetypes=[("JPEG files", "*.jpg"), ("All files", "*.*")]
+        )
+        if not out_path:
+            return
+
+        try:
+            # 1) Re-postprocess if RAW
+            if self.raw_data is not None:
+                br = self.brightness.get()
+                base_bgr = bp.convert_raw_to_bgr(self.raw_data, bright=br)
+            else:
+                base_bgr = self.nonraw_bgr
+
+            # 2) Rotate
+            rotated_bgr = bp.rotate_image(base_bgr, self.rotation_degs)
+
+            # 3) Optional whitening
+            if self.do_whiten_bg.get():
+                rotated_bgr = bp.whiten_background(rotated_bgr, threshold=200)
+
+            # 4) Crop
+            face_coverage = self.face_coverage.get()
+            x, y, w, h = self.bbox
+            crop_box = bp.compute_biometric_crop(rotated_bgr, (x, y, w, h), face_coverage)
+
+            # 5) Resize with 600 DPI
+            single_photo_600 = bp.crop_and_resize_biometric(rotated_bgr, crop_box, dpi=600)
+
+            # 6) Save
+            single_photo_600.save(out_path, "JPEG")
+            messagebox.showinfo("Success", f"Saved single 600 DPI photo to:\n{out_path}")
+
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to export single:\n{e}")
 
     def export_layout(self):
         """Export final 3x2 layout with optional whitened BG, brightness, rotation, etc."""
