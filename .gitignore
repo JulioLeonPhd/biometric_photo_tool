@@ -169,3 +169,15 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
+
+# Data folder
+data/
+
+# Output folder
+output/
+
+# VS Code
+.vscode/
+
+# haarcascade file
+!lib/haarcascade_frontalface_default.xml
